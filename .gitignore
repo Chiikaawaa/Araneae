@@ -1,0 +1,8 @@
+# Ignore everything
+*
+
+# Keep .gitignore itself
+!.gitignore
+
+# Keep only the C++ source
+!Cpptry.cpp
