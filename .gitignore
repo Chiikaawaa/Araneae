@@ -4,4 +4,5 @@
 !Autograd.h
 !MLP.h
 !pendulum.cpp
+!RK4solver.cpp
 !README.md
