@@ -1,106 +1,82 @@
 # Araneae
 
-Araneae is a Physics-Informed Neural Network (PINN) implemented from scratch in C++, without using machine learning frameworks such as PyTorch or LibTorch.
+Araneae is a C++ learning project exploring the implementation of **automatic differentiation, neural networks, numerical ODE solvers, and Physics-Informed Neural Networks (PINNs)** from scratch.
 
-The project focuses on solving a damped nonlinear pendulum problem by combining a custom neural network, automatic differentiation, and the governing physics equation.
+The project uses a custom computational graph to track values and gradients, extends it to propagate first and second derivatives, and uses these components to train a small neural network to approximate the solution of a damped pendulum differential equation.
 
 ## Features
 
-* Custom automatic differentiation engine
-* Support for first and second derivatives
-* Custom MLP implementation
-* `Trident` type for tracking value, first derivative, and second derivative
-* Physics-based loss function
-* Initial condition loss
-* Training using gradient descent
-* Nonlinear damped pendulum equation
+* Custom reverse-mode automatic differentiation engine using `std::shared_ptr`
+* Basic arithmetic and mathematical operations including:
+
+  * Addition, subtraction, multiplication, division
+  * `exp`, `tanh`, `pow`, `sin`, and `cos`
+* First-order gradient computation through a computational graph
+* `Trident` type for carrying:
+
+  * Function value
+  * First derivative
+  * Second derivative
+* Simple feed-forward MLP implementation with configurable layers
+* `tanh` activation for hidden layers
+* Random parameter initialization
+* Fourth-order Runge-Kutta (RK4) solver for comparison
+* Physics-Informed Neural Network for solving a damped pendulum ODE
 
 ## Project Structure
 
 ```text
 Araneae/
-├── Autograd.h    # Automatic differentiation engine
-├── MLP.h         # Neuron, Layer and MLP implementation
-└── pendulum.cpp  # Pendulum physics and training loop
+├── Autograd.h       # Automatic differentiation and Trident
+├── MLP.h            # Neuron, Layer, and MLP implementation
+├── RK4solver.cpp    # Numerical RK4 solution of the pendulum
+└── pendulum.cpp     # PINN training implementation
 ```
 
 ## How It Works
 
-The neural network takes time `t` as its input and predicts the angular displacement `θ(t)`.
+The project represents computations as a graph of `Value` objects. Each value stores its numerical data, gradient, parent nodes, and a backward function. Calling `backward()` builds a topological ordering of the graph and propagates gradients through it.
 
-The physics loss is based on the damped pendulum equation:
+On top of this, `Trident` stores a value along with its first and second derivatives. This allows the neural network to directly construct quantities such as the second derivative required by a second-order differential equation.
 
-```text
-θ'' + γθ' + ω²θ = 0
-```
+The MLP operates on `Trident` values, allowing derivatives to be propagated through the network while evaluating the model. Hidden layers use `tanh`, while the final layer is linear.
 
-where:
+For the PINN experiment, the network is trained to satisfy the damped pendulum equation while also matching the initial angle and angular velocity. The loss consists of a physics residual loss and an initial-condition loss.
 
-* `θ` is the angular displacement
-* `θ'` is the angular velocity
-* `θ''` is the angular acceleration
-* `γ` is the damping coefficient
-* `ω²` is the angular-frequency term
+An independent RK4 implementation is included to numerically solve the same pendulum system and provide a conventional numerical-method reference.
 
-The network is trained by minimizing a combination of the physics loss and the initial-condition loss.
+## Example Setup
+
+The current experiment uses an MLP with architecture:
 
 ```text
-Total Loss = Physics Loss + λ × Initial Condition Loss
+1 → 64 → 32 → 1
 ```
 
-The current implementation uses a `1 → 64 → 32 → 1` MLP architecture and trains it using gradient descent.
+The PINN samples time points from the simulation interval and minimizes the differential-equation residual together with the initial-condition error.
 
-## Automatic Differentiation
+## Goals
 
-`Autograd.h` implements a small computational graph system using `Value` objects. Each value stores its numerical value, gradient, previous nodes, and a backward function.
+This project is primarily a learning and experimentation project. The main goals are to understand:
 
-The `Trident` class extends this idea by keeping track of:
+* How reverse-mode automatic differentiation works internally
+* How computational graphs can be implemented in C++
+* How higher-order derivatives can be propagated
+* How neural networks can be used to approximate solutions to differential equations
+* How PINNs compare with traditional numerical solvers such as RK4
 
-```text
-value
-first derivative
-second derivative
-```
+## Future Work
 
-This allows the PINN to directly obtain the derivatives required by the differential equation.
+Possible extensions include:
 
-## Requirements
+* More robust memory management for computational graphs
+* Additional activation functions
+* Optimizers such as Adam
+* Better training and loss scaling
+* Comparison of PINN predictions against RK4 solutions
+* Support for higher-order derivatives
+* Applying the framework to additional ODEs and PDEs
 
-* C++ compiler with C++17 or later support
-* Standard C++ library
+## Status
 
-No external ML or numerical computing libraries are required.
-
-## Building
-
-Using `g++`:
-
-```bash
-g++ pendulum.cpp -o pendulum
-```
-
-Run with:
-
-```bash
-./pendulum
-```
-
-On Windows PowerShell:
-
-```powershell
-g++ pendulum.cpp -o pendulum
-.\pendulum.exe
-```
-
-## Current Status
-
-The basic PINN pipeline is implemented:
-
-* Automatic differentiation
-* Higher-order derivatives
-* MLP
-* Physics residual
-* Initial conditions
-* Gradient-based training
-
-The project is currently focused on improving training stability and validating the PINN solution against a numerical solver.
+Work in progress. This project is being developed primarily as a hands-on exploration of automatic differentiation, neural networks, and scientific computing in C++.
