@@ -35,7 +35,7 @@ class Value {
 
     public:
 
-        static sptr create(double data, std::array<sptr, 2> _prev) {
+        static sptr create(double data, std::array<sptr, 2> _prev = {nullptr, nullptr}) {
             return sptr(new Value(data, _prev));
         }
 

@@ -1,6 +1,7 @@
 #include<iostream>
 #include<vector>
 #include<cmath>
+#include<fstream>
 #define pi 3.14159265358979323846
 using namespace std;
 
@@ -71,7 +72,7 @@ int main() {
         double t = 0.0;
         int n_steps = int(t_end / h);
 
-        ofstream csv("rk4_results.csv");
+        std::ofstream csv("rk4_results.csv");
         csv << "time,theta,omega\n";
         csv << t << "," << Y[0] << "," << Y[1] << "\n";   // t=0 initial condition
 
