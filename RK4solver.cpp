@@ -6,7 +6,7 @@ using namespace std;
 
 double M = 1.0, g = 9.81, r = 0.2, θ0 = pi/3;
 double ω0 = 0.0;
-double I = 1 / 3 * M * (2 * r) * (2 * r);
+double I = 1.0 / 3.0 * M * (2 * r) * (2 * r);
 double C = 0.2;
 
 
@@ -66,16 +66,21 @@ double energy(double θ, double ω){
 }
 int main() {
     vector<double> Y = {θ0, ω0};
-    double h = 0.01;
-    double t_end = 10.0;
-    double t = 0.0;
-    double n_steps = t_end / h;
-    for(int i = 0; i < n_steps; i++){
-        Y = rk4(Y, h);
-        t += h;
-        if(i % int(1/h) == 0){
-            cout<<"t = "<<t<<"θ = "<<Y[0]<<" ω = "<<Y[1]<<" E = "<<energy(Y[0], Y[1])<<endl;
+        double h = 0.01;
+        double t_end = 10.0;
+        double t = 0.0;
+        int n_steps = int(t_end / h);
+
+        ofstream csv("rk4_results.csv");
+        csv << "time,theta,omega\n";
+        csv << t << "," << Y[0] << "," << Y[1] << "\n";   // t=0 initial condition
+
+        for(int i = 0; i < n_steps; i++){
+            Y = rk4(Y, h);
+            t += h;
+            csv << t << "," << Y[0] << "," << Y[1] << "\n";
         }
-    }
-    return 0;
+        csv.close();
+
+        return 0;
 }

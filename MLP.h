@@ -9,7 +9,7 @@ using namespace std;
 
 inline random_device rd;
 inline mt19937 g_rng(rd());
-inline uniform_real_distribution<double> udb(-1.0, 1.0);
+inline uniform_real_distribution<double> udb(-1, 1);
 
 class Neuron {
   public:

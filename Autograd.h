@@ -18,31 +18,25 @@ class Value {
         double data;
         double grad;
     private:
-        std::string _op;
-        std::string label;
-        std::vector<sptr> _prev;
+        std::array<sptr, 2> _prev = {nullptr, nullptr};
         std::function<void()> _backward;
 
         Value(
             double data = 0.0,
-            std::vector<sptr> _prev = {},
-            std::string _op = "",
-            std::string label = ""
+            std::array<sptr, 2> _prev = {nullptr, nullptr}
         ):
         data(data),
         grad(0.0),
         _backward([]() {}),
-        _prev(_prev),
-        _op(_op),
-        label(label)
+        _prev(_prev)
         {}
-        //Value(const Value&) = delete;
-        //Value& operator = (const Value&) = delete;
+        Value(const Value&) = delete;
+        Value& operator = (const Value&) = delete;
 
     public:
 
-        static sptr create(double data, std::vector<sptr> _prev = {}, std::string _op = "", std::string label = "") {
-            return sptr(new Value(data, std::move(_prev), std::move(_op), std::move(label)));
+        static sptr create(double data, std::array<sptr, 2> _prev) {
+            return sptr(new Value(data, _prev));
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Value& v){
@@ -50,7 +44,7 @@ class Value {
         }
 
         friend sptr operator + (const sptr& a, const sptr& b) {
-            auto out = Value::create(a->data + b->data, {a, b}, "+");
+            auto out = Value::create(a->data + b->data, {a, b});
             Value* out_rawptr = out.get();
             out->_backward = [a, b, out_rawptr]() {
                 a->grad += 1.0 * out_rawptr->grad;
@@ -59,7 +53,7 @@ class Value {
             return out;
         }
         friend sptr operator + (const sptr& a, double k) {
-            auto out = Value::create(a->data + k, {a}, "scalar +");
+            auto out = Value::create(a->data + k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += 1.0 * out_rawptr->grad;
@@ -67,7 +61,7 @@ class Value {
             return out;
         }
         friend sptr operator + (double k, const sptr& a) {
-            auto out = Value::create(a->data + k, {a}, "scalar +");
+            auto out = Value::create(a->data + k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += 1.0 * out_rawptr->grad;
@@ -76,7 +70,7 @@ class Value {
         }
 
         friend sptr operator - (const sptr& a, const sptr& b) {
-            auto out = Value::create(a->data - b->data, {a, b}, "-");
+            auto out = Value::create(a->data - b->data, {a, b});
             Value* out_rawptr = out.get();
             out->_backward = [a, b, out_rawptr]() {
                 a->grad += 1.0 * out_rawptr->grad;
@@ -85,7 +79,7 @@ class Value {
             return out;
         }
         friend sptr operator - (const sptr& a, double k) {
-            auto out = Value::create(a->data - k, {a}, "scalar -");
+            auto out = Value::create(a->data - k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += 1.0 * out_rawptr->grad;
@@ -93,7 +87,7 @@ class Value {
             return out;
         }
         friend sptr operator - (double k, const sptr& a) {
-            auto out = Value::create(k - a->data, {a}, "scalar -");
+            auto out = Value::create(k - a->data, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += -1.0 * out_rawptr->grad;
@@ -102,7 +96,7 @@ class Value {
         }
 
         friend sptr operator * (const sptr& a, const sptr& b) {
-            auto out = Value::create(a->data * b->data, {a, b}, "*");
+            auto out = Value::create(a->data * b->data, {a, b});
             Value* out_rawptr = out.get();
             out->_backward = [a, b, out_rawptr]() {
                 a->grad += b->data * out_rawptr->grad;
@@ -111,7 +105,7 @@ class Value {
             return out;
         }
         friend sptr operator * (const sptr& a, double k) {
-            auto out = Value::create(a->data * k, {a}, "scalar *");
+            auto out = Value::create(a->data * k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, k, out_rawptr]() {
                 a->grad += k * out_rawptr->grad;
@@ -119,7 +113,7 @@ class Value {
             return out;
         }
         friend sptr operator * (double k, const sptr& a) {
-            auto out = Value::create(a->data * k, {a}, "scalar *");
+            auto out = Value::create(a->data * k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, k, out_rawptr]() {
                 a->grad += k * out_rawptr->grad;
@@ -128,7 +122,7 @@ class Value {
         }
 
         friend sptr operator / (const sptr& a, const sptr& b) {
-            auto out = Value::create(a->data / b->data, {a, b}, "div");
+            auto out = Value::create(a->data / b->data, {a, b});
             Value* out_rawptr = out.get();
             out->_backward = [a, b, out_rawptr]() {
                 a->grad += 1 / b->data * out_rawptr->grad;
@@ -137,7 +131,7 @@ class Value {
             return out;
         }
         friend sptr operator / (const sptr& a, double k) {
-            auto out = Value::create(a->data / k, {a}, "scalar div");
+            auto out = Value::create(a->data / k, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, k, out_rawptr]() {
                 a->grad += 1/k * out_rawptr->grad;
@@ -145,7 +139,7 @@ class Value {
             return out;
         }
         friend sptr operator / (double k, const sptr& a) {
-            auto out = Value::create(k / a->data, {a}, "scalar div");
+            auto out = Value::create(k / a->data, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, k, out_rawptr]() {
                 a->grad += -k * out_rawptr->grad / (a->data * a->data);
@@ -153,7 +147,7 @@ class Value {
             return out;
         }
         friend sptr exp(const sptr& a) {
-            auto out = Value::create(std::exp(a->data), {a}, "exp()");
+            auto out = Value::create(std::exp(a->data), {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += out_rawptr->data * out_rawptr->grad;
@@ -162,7 +156,7 @@ class Value {
         }
 
         friend sptr tanh(const sptr& a) {
-            auto out = Value::create(std::tanh(a->data), {a}, "tanh()");
+            auto out = Value::create(std::tanh(a->data), {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr]() {
                 a->grad += (1.0 - out_rawptr->data * out_rawptr->data) * out_rawptr->grad;
@@ -171,7 +165,7 @@ class Value {
         }
 
         friend sptr pow(const sptr& a, double k) {
-            auto out = Value::create(std::pow(a->data, k), {a}, "pow()");
+            auto out = Value::create(std::pow(a->data, k), {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, k, out_rawptr]() {
                 a->grad += k * std::pow(a->data, k - 1) * out_rawptr->grad;
@@ -182,7 +176,7 @@ class Value {
         friend sptr sin(const sptr& a) {
             double s = std::sin(a->data);
             double c = std::cos(a->data);
-            auto out = Value::create(s, {a}, "sin()");
+            auto out = Value::create(s, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr, c]() {
                 a->grad += c * out_rawptr->grad;
@@ -193,7 +187,7 @@ class Value {
         friend sptr cos(const sptr& a) {
             double s = std::sin(a->data);
             double c = std::cos(a->data);
-            auto out = Value::create(c, {a}, "cos()");
+            auto out = Value::create(c, {a});
             Value* out_rawptr = out.get();
             out->_backward = [a, out_rawptr, s]() {
                 a->grad += -s * out_rawptr->grad;
