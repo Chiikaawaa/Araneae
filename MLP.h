@@ -7,39 +7,35 @@
 #include <cassert>
 using namespace std;
 
-inline random_device rd;
-inline mt19937 g_rng(rd());
-inline uniform_real_distribution<double> udb(-1, 1);
+inline mt19937 g_rng(std::random_device{}());
+inline uniform_real_distribution<double> udb(-0.5, 0.5);
 
 class Neuron {
   public:
-    vector<Trident> weight;
-    Trident bias = Trident(Value::create(udb(g_rng)), Value::create(0.0), Value::create(0.0));
+    vector<Value::sptr> weight;
+    Value::sptr bias = Value::create(0.0);
     bool nonlin;
     int nin;
 
     Neuron(bool nonlin = true, int nin = 0) : nonlin(nonlin), nin(nin) {
         weight.reserve(nin);
         for (int i = 0; i < nin; ++i) {
-            weight.push_back(Trident(
-                Value::create(udb(g_rng)),
-                Value::create(0.0),
-                Value::create(0.0)
-            ));
+            weight.push_back( Value::create( udb(g_rng) ) );
         }
     }
 
     Trident operator()(const vector<Trident>& x) const {
         assert(static_cast<int>(x.size()) == nin && "Neuron input size mismatch");
-        Trident sum = bias;
-        for (int i = 0; i < nin; ++i) {
+        Trident sum = x[0] * weight[0];
+        for (int i = 1; i < nin; ++i) {
             sum = sum + (x[i] * weight[i]);
         }
+        sum = sum + bias;
         return nonlin ? sum.Tanh() : sum;
     }
 
-    vector<Trident> parameters() const {
-        vector<Trident> params;
+    vector<Value::sptr> parameters() const {
+        vector<Value::sptr> params;
         params.reserve(nin + 1);
         for (int i = 0; i < nin; ++i) {
             params.push_back(weight[i]);
@@ -73,8 +69,8 @@ class Layer {
         return y;
     }
 
-    vector<Trident> parameters() const {
-        vector<Trident> y;
+    vector<Value::sptr> parameters() const {
+        vector<Value::sptr> y;
         for (int i = 0; i < nout; ++i) {
             auto p = neurons[i].parameters();
             y.insert(y.end(), p.begin(), p.end());
@@ -106,8 +102,8 @@ class MLP {
         return x;
     }
 
-    vector<Trident> parameters() const {
-        vector<Trident> y;
+    vector<Value::sptr> parameters() const {
+        vector<Value::sptr> y;
         for (const Layer& layer : layers) {
             auto p = layer.parameters();
             y.insert(y.end(), p.begin(), p.end());
@@ -116,11 +112,7 @@ class MLP {
     }
 
     void zero_grad() const {
-        for (auto& p : parameters()) {
-            p.val->grad = 0.0;
-            p.de1->grad = 0.0;
-            p.de2->grad = 0.0;
-        }
+        for (auto& p : parameters()) p->grad = 0.0;
     }
 };
 #endif

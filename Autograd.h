@@ -9,6 +9,7 @@
 #include<utility>
 #include<string>
 #include<unordered_set>
+#include<array>
 
 using namespace std;
 
@@ -201,7 +202,9 @@ class Value {
 
             std::function<void(Value*)> build_topo = [&](Value* v) {
                 if (visited.insert(v).second) {
-                    for (auto& child : v->_prev) build_topo(child.get());
+                    for (auto& child : v->_prev){
+                        if (child != nullptr) build_topo(child.get());
+                    }
                     topo.push_back(v);
                 }
             };
@@ -211,16 +214,6 @@ class Value {
             for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
                 (*it)->_backward();
             }
-        }
-        void zero_grad() {
-            std::unordered_set<Value*> visited;
-            std::function<void(Value*)> gd0 = [&](Value* v) {
-                if (visited.insert(v).second) {
-                    for (auto& child : v->_prev) gd0(child.get());
-                    v->grad = 0.0;
-                }
-            };
-            gd0(this);
         }
 };
 
@@ -245,6 +238,13 @@ class Trident {
             Trident out(val, de1, de2);
             return out;
         }
+        Trident operator + (const Value::sptr& b) const {
+            Value::sptr val = this->val + b;
+            Value::sptr de1 = this->de1;
+            Value::sptr de2 = this->de2;
+            Trident out(val, de1, de2);
+            return out;
+        }
         Trident operator + (const double k) const {
             Value::sptr val = this-> val + k;
             Trident out(val, this->de1, this-> de2);
@@ -254,6 +254,13 @@ class Trident {
             Value::sptr val = this-> val * b.val;
             Value::sptr de1 = this-> de1 * b.val + this-> val * b.de1;
             Value::sptr de2 = this-> de2 * b.val + this-> de1 * b.de1 * 2 + b.de2 * this-> val;
+            Trident out(val, de1, de2);
+            return out;
+        }
+        Trident operator * (const Value::sptr& w) const {
+            Value::sptr val = this->val * w;
+            Value::sptr de1 = this->de1 * w;
+            Value::sptr de2 = this->de2 * w;
             Trident out(val, de1, de2);
             return out;
         }

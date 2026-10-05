@@ -3,6 +3,11 @@
 !.gitignore
 !Autograd.h
 !MLP.h
-!pendulum.cpp
+!pendulum_train.cpp
 !RK4solver.cpp
+!Model.h
+!PiNN_run.cpp
+!RK4_vs_PiNN.ipynb
 !README.md
+!Parameter_dial.h
+!ModelSL.h
