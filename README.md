@@ -184,6 +184,4 @@ Everything lives in `Parameter_dial.h`.
 
 - The network trains on 4 periods but `PiNN_run` and `RK4solver` run for 5. That last stretch is extrapolation, so expect the network to take a swing and a miss there.
 - `time_period` is the small angle formula. At 60 degrees the real period is longer, so "4 periods" is a rough window size and not an exact count of oscillations.
-- `RK4solver.cpp` hardcodes `h = 0.01`. It does not read `trn.h`, so keep them in sync if you want rows to line up in the notebook.
 - The grid in `PiNN_run` is `total_time * i / ns` with an integer `ns`, so its spacing is only close to `h`. The two CSVs have slightly different row counts and times, so compare them by plotting, not by row index.
-- No fixed seed, so loss curves differ between runs.

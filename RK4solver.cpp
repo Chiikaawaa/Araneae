@@ -16,11 +16,11 @@ vector<double> func(vector<double> Y){
     return {dθ, dω};
 }
 
-vector<double> rk4(vector<double> Y, double h){
+vector<double> rk4(vector<double> Y){
     vector<double> z = func(Y);
     vector<double> k1;
     for(auto x : z){
-        k1.emplace_back(x * h);
+        k1.emplace_back(x * trn.h);
     }
     vector<double> Y2;
     for(int i = 0; i < Y.size(); i++){
@@ -29,7 +29,7 @@ vector<double> rk4(vector<double> Y, double h){
     z = func(Y2);
     vector<double> k2;
     for(auto x : z){
-        k2.emplace_back(x * h);
+        k2.emplace_back(x * trn.h);
     }
     vector<double> Y3;
     for(int i = 0; i < Y.size(); i++){
@@ -38,7 +38,7 @@ vector<double> rk4(vector<double> Y, double h){
     z = func(Y3);
     vector<double> k3;
     for(auto x : z){
-        k3.emplace_back(x * h);
+        k3.emplace_back(x * trn.h);
     }
     vector<double> Y4;
     for(int i = 0; i < Y.size(); i++){
@@ -47,7 +47,7 @@ vector<double> rk4(vector<double> Y, double h){
     z = func(Y4);
     vector<double> k4;
     for(auto x : z){
-        k4.emplace_back(x * h);
+        k4.emplace_back(x * trn.h);
     }
     vector<double> K;
     for(int i = 0; i < Y.size(); i++){
@@ -74,8 +74,8 @@ int main() {
     csv << t << "," << Y[0] << "," << Y[1] << "\n";   // t=0 initial condition
 
     for(int i = 0; i < n_steps; i++){
-        Y = rk4(Y, h);
-        t += h;
+        Y = rk4(Y);
+        t += trn.h;
         csv << t << "," << Y[0] << "," << Y[1] << "\n";
     }
     csv.close();
