@@ -111,7 +111,7 @@ class MLP {
         return y;
     }
 
-    void zero_grad() const {
+    void zero_grad() {
         for (auto& p : parameters()) p->grad = 0.0;
     }
 };
