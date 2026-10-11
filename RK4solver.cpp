@@ -8,9 +8,6 @@
 #define pi 3.14159265358979323846
 using namespace std;
 
-Pendulum_params pnd;
-Training_params trn;
-
 vector<double> func(vector<double> Y){
     double θ  = Y[0];
     double ω  = Y[1];
@@ -68,7 +65,7 @@ double energy(double θ, double ω){
 int main() {
     vector<double> Y = {pnd.theta0, pnd.omega0};
     double h = 0.01;
-    double t_end = pnd.time_period * trn.total_oscillations;
+    double t_end = pnd.time_period * (trn.total_oscillations+1);
     double t = 0.0;
     int n_steps = int(t_end / h);
 

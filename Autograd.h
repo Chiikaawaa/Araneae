@@ -11,13 +11,12 @@
 #include<unordered_set>
 #include<array>
 
-using namespace std;
-
 class Value {
     public:
         using sptr = std::shared_ptr<Value>;
         double data;
         double grad;
+        bool visited;
     private:
         std::array<sptr, 2> _prev = {nullptr, nullptr};
         std::function<void()> _backward;
@@ -28,6 +27,7 @@ class Value {
         ):
         data(data),
         grad(0.0),
+        visited(false),
         _backward([]() {}),
         _prev(_prev)
         {}
@@ -198,21 +198,33 @@ class Value {
 
     void backward() {
             std::vector<Value*> topo;
-            std::unordered_set<Value*> visited;
+            std::vector<std::pair<Value*, int>> stack;
+            topo.clear();
+            stack.clear();
 
-            std::function<void(Value*)> build_topo = [&](Value* v) {
-                if (visited.insert(v).second) {
-                    for (auto& child : v->_prev){
-                        if (child != nullptr) build_topo(child.get());
+            this->visited = true;
+            stack.push_back({this, 0});
+
+            while(!stack.empty()) {
+                auto& [v, idx] = stack.back();
+                if(idx < v->_prev.size()) {
+                    Value* c = v->_prev[idx++].get();
+                    if(c && !c->visited) {
+                        c->visited = true;
+                        stack.push_back({c, 0});
                     }
+                } else {
                     topo.push_back(v);
+                    stack.pop_back();
                 }
-            };
+            }
 
-            build_topo(this);
             this->grad = 1.0;
-            for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
+            for (auto it = topo.rbegin(); it != topo.rend(); it++) {
                 (*it)->_backward();
+            }
+            for (auto v : topo) {
+                v->visited = false;
             }
         }
 };
@@ -227,7 +239,7 @@ class Trident {
         {}
     private:
         friend std::ostream& operator <<(std::ostream& os, const Trident& t){
-            return os <<"Trident( val = " << *t.val << ", de1 = "<< *t.de1 << ", de2 = " << *t.de2<<" )"<<endl;
+            return os <<"Trident( val = " << *t.val << ", de1 = "<< *t.de1 << ", de2 = " << *t.de2<<" )"<<"\n";
         }
 
     public:

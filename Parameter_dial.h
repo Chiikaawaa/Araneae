@@ -1,7 +1,12 @@
 #ifndef PARAMETER_DIAL_H
 #define PARAMETER_DIAL_H
 
-#include<cmath>
+#include "Autograd.h"
+
+#include <cmath>
+#include <iostream>
+#include <vector>
+
 constexpr double pi = 3.141592653589793238462643;
 
 struct Pendulum_params {
@@ -25,19 +30,38 @@ struct Pendulum_params {
         time_period = 2.0 * pi / std::sqrt(angfreqsqr - std::pow(gamma / 2.0, 2.0));
     }
 };
+
 struct Training_params {
     double total_oscillations = 4.0;
-    int batch_size = 50;
+    int batch_size = 100;
     double h = 0.01;
-    double loss_scaling = 100.0;
-    int iterations = 20000;
+    double lambda_ic = 1.0;
+    double lambda_ph = 1.0;
+    int iterations = 35000;
 
-    double learning_rate = 1e-3;
-    double start_lr = 1e-3;
-    double end_lr = 5 * 1e-5;
+    double learning_rate = 1e-2;
+    double lr_start = learning_rate;
+    double lr_end = 1e-5;
     double beta1 = 0.9;
     double beta2 = 0.999;
     double epsilon = 1e-8;
 };
+
+inline Pendulum_params pnd;
+inline Training_params trn;
+
+constexpr int n_freq = 4;
+constexpr int n_inputs = 1 + 2 * n_freq;
+
+inline std::vector<Trident> encode(const Trident& t) {
+    std::vector<Trident> f;
+    f.emplace_back(t);
+    for (int k = 1; k <= n_freq; k++){
+        Trident a = t * double(k);
+        f.push_back(a.Sin());
+        f.push_back(a.Cos());
+    }
+    return f;
+}
 
 #endif
