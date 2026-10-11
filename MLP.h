@@ -2,12 +2,13 @@
 #define MLP_H
 
 #include "Autograd.h"
+#include "Parameter_dial.h"
+
 #include <random>
 #include <vector>
 #include <cassert>
 using namespace std;
 
-inline mt19937 g_rng(std::random_device{}());
 inline uniform_real_distribution<double> udb(-0.5, 0.5);
 
 class Neuron {

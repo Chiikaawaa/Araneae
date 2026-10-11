@@ -6,13 +6,15 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <random>
 
+inline std::mt19937 g_rng(std::random_device{}());
 constexpr double pi = 3.141592653589793238462643;
 
 struct Pendulum_params {
     double M = 1.0;
     double g = 9.81;
-    double r_len = 0.2;
+    double r = 0.2;
     double C = 0.05;
 
     double theta0 = pi / 3.0;
@@ -24,8 +26,8 @@ struct Pendulum_params {
     double time_period;
 
     Pendulum_params() {
-        I = (1.0 / 3.0) * M * (2.0 * r_len) * (2.0 * r_len);
-        angfreqsqr = M * g * r_len / I;
+        I = (1.0 / 3.0) * M * (2.0 * r) * (2.0 * r);
+        angfreqsqr = M * g * r / I;
         gamma = C / I;
         time_period = 2.0 * pi / std::sqrt(angfreqsqr - std::pow(gamma / 2.0, 2.0));
     }

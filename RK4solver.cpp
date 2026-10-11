@@ -12,7 +12,7 @@ vector<double> func(vector<double> Y){
     double θ  = Y[0];
     double ω  = Y[1];
     double dθ = ω;
-    double dω = ((-1 * pnd.C * ω) - (pnd.M * pnd.g * pnd.r_len * sin(θ)))/pnd.I;
+    double dω = ((-1 * pnd.C * ω) - (pnd.M * pnd.g * pnd.r * sin(θ)))/pnd.I;
     return {dθ, dω};
 }
 
@@ -60,7 +60,7 @@ vector<double> rk4(vector<double> Y, double h){
     return Ynext;
 }
 double energy(double θ, double ω){
-    return 0.5 * pnd.I * ω * ω + pnd.M * pnd.g * pnd.r_len * (1 - cos(θ));
+    return 0.5 * pnd.I * ω * ω + pnd.M * pnd.g * pnd.r * (1 - cos(θ));
 }
 int main() {
     vector<double> Y = {pnd.theta0, pnd.omega0};
