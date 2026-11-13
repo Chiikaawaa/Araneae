@@ -11,6 +11,7 @@
 int main() {
     Training_params trn;
     Pendulum_params pnd;
+    DLoptimiser dlo;
     double total_time = (trn.total_oscillations+1) * pnd.time_period;
     int ns = total_time / trn.h;
     MLP net(n_inputs, {32, 32, 32, 1});
@@ -20,22 +21,22 @@ int main() {
     else {
         std::cout<<"Load kela model, thamb pudhcha karto"<<"\n";
     }
-    ofstream csv("pendulum_results_NN.csv");
-    csv<<"time,theta,omega"<<endl;
+    std::ofstream csv("pendulum_results_NN.csv");
+    csv<<"time,theta,omega\n";
     for (int i = 0; i < ns; i++) {
-        if(i%10==0) cout<<i<<'\n';
+        if(i%10==0) std::cout<<i<<'\n';
         double time = total_time * i / ns;
         double tau  = time * sqrt(pnd.angfreqsqr);
 
         Trident t(Value::create(tau), Value::create(1.0), Value::create(0.0));
         Trident theta = net(encode(t))[0];
 
-        double theta_val = theta.val->data;
-        double omega_val = theta.de1->data * sqrt(pnd.angfreqsqr);
+        double theta_val = theta.val.data();
+        double omega_val = theta.de1.data() * sqrt(pnd.angfreqsqr);
 
         csv << time << "," << theta_val << "," << omega_val << "\n";
     }
     csv.close();
-    cout << "Wrote " << ns << " data rows\n";
+    std::cout << "Wrote " << ns << " data rows\n";
     return 0;
 }

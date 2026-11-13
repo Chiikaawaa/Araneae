@@ -7,22 +7,22 @@
 #include "Autograd.h"
 #include "MLP.h"
 
-inline bool save_model (const MLP& net, const string& path) {
+inline bool save_model (const MLP& net, const std::string& path) {
     auto params = net.parameters();
-    ofstream f(path, std::ios::binary);
+    std::ofstream f(path, std::ios::binary);
     if(!f) return false;
     uint64_t n = static_cast<uint64_t>(params.size());
     f.write(reinterpret_cast<const char*> (&n), sizeof(n));
     for(auto& p: params) {
-        auto d = p->data;
+        auto d = p.data();
         f.write(reinterpret_cast<const char*>(&d), sizeof(d));
     }
     return true;
 }
 
-inline bool load_model (MLP& net, const string& path) {
+inline bool load_model (MLP& net, const std::string& path) {
     auto params = net.parameters();
-    ifstream f(path, std::ios::binary);
+    std::ifstream f(path, std::ios::binary);
     if (!f) return false;
     uint64_t n;
     f.read(reinterpret_cast<char*>(&n), sizeof(n));
@@ -33,7 +33,7 @@ inline bool load_model (MLP& net, const string& path) {
     for(auto& p: params) {
         double d;
         f.read(reinterpret_cast<char*> (&d), sizeof(d));
-        p-> data = d;
+        p.data() = d;
     }
     return true;
 }

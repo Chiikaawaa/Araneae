@@ -1,13 +1,27 @@
-*
+# Compiled binaries & executables (Windows & Unix)
+*.exe
+*.out
+*.o
+*.obj
+pendulum_train
+PiNN_run
+RK4solver
 
-!.gitignore
-!Autograd.h
-!MLP.h
-!pendulum_train.cpp
-!RK4solver.cpp
-!Model.h
-!PiNN_run.cpp
-!RK4_vs_PiNN.ipynb
-!README.md
-!Parameter_dial.h
-!ModelSL.h
+# Trained model weights checkpoint
+pendulum
+
+# Training & simulation CSV outputs
+*.csv
+
+# Jupyter Notebook checkpoints & scratch files
+.ipynb_checkpoints/
+Untitled*.ipynb
+bin.text
+
+# IDE & Editor folders
+.vscode/
+.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db

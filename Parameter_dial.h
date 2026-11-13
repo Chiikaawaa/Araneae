@@ -39,8 +39,10 @@ struct Training_params {
     double h = 0.01;
     double lambda_ic = 1.0;
     double lambda_ph = 1.0;
-    int iterations = 35000;
+    int iterations = 25000;
+};
 
+struct DLoptimiser {
     double learning_rate = 1e-2;
     double lr_start = learning_rate;
     double lr_end = 1e-5;
@@ -51,6 +53,7 @@ struct Training_params {
 
 inline Pendulum_params pnd;
 inline Training_params trn;
+inline DLoptimiser dlo;
 
 constexpr int n_freq = 4;
 constexpr int n_inputs = 1 + 2 * n_freq;

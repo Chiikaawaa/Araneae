@@ -5,7 +5,6 @@
 #include<cmath>
 #include<fstream>
 
-#define pi 3.14159265358979323846
 using namespace std;
 
 vector<double> func(vector<double> Y){
@@ -64,16 +63,15 @@ double energy(double θ, double ω){
 }
 int main() {
     vector<double> Y = {pnd.theta0, pnd.omega0};
-    double h = 0.01;
     double t_end = pnd.time_period * (trn.total_oscillations+1);
     double t = 0.0;
-    int n_steps = int(t_end / h);
+    int n_steps = int(t_end / trn.h);
 
     std::ofstream csv("rk4_results.csv");
     csv << "time,theta_r,omega_r\n";
-    csv << t << "," << Y[0] << "," << Y[1] << "\n";   // t=0 initial condition
-
+    csv << t << "," << Y[0] << "," << Y[1] << "\n";
     for(int i = 0; i < n_steps; i++){
+        if(i%10 == 0) std::cout<<i<<"\n";
         Y = rk4(Y);
         t += trn.h;
         csv << t << "," << Y[0] << "," << Y[1] << "\n";
