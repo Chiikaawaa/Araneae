@@ -14,39 +14,68 @@
 
 constexpr std::uint32_t None = std::numeric_limits<std::uint32_t>::max();
 
-struct node {
+enum class NodeType {
+    Basic,
+    Fused
+};
+
+struct basic {
     double data;
     double grad;
     std::uint32_t p0;
     double d0;
     std::uint32_t p1;
     double d1;
+    NodeType type{NodeType::Basic};
+    std::uint32_t fuse_id = None;
+};
+struct fused {
+    std::vector <std::uint32_t> xi;
+    std::vector <std::uint32_t> wi;
 };
 
 struct tape {
-    std::vector<node> Nodes;
+    std::vector<basic> basicNodes;
+    std::vector<fused> fusedNodes;
     bool frozen = false;
-    std::uint32_t mark = 0;
+    std::uint32_t bmark = 0, fmark = 0;
     tape() {
-        Nodes.reserve( 2 << 20 );
+        basicNodes.reserve( 2 << 20 );
+        fusedNodes.reserve( 2 << 18 );
     }
-    std::uint32_t push(
+    std::uint32_t push_basic(
         double data,
         std::uint32_t p0 = None,
         double d0 = 0,
         std::uint32_t p1 = None,
         double d1 = 0
         ) {
-            Nodes.push_back({data, 0.0, p0, d0, p1, d1});
-            return (std::uint32_t)Nodes.size() - 1;
+            basicNodes.push_back({data, 0.0, p0, d0, p1, d1, NodeType::Basic, None});
+            return (std::uint32_t)basicNodes.size() - 1;
         }
+    std::uint32_t push_fused(
+        std::vector<std::uint32_t> xi,
+        std::vector<std::uint32_t> wi,
+        std::uint32_t bias_id = None
+    ) {
+        double s = (bias_id != None) ? basicNodes[bias_id].data : 0.0;
+        for(std::size_t k = 0; k < xi.size(); k++) {
+            s += basicNodes[xi[k]].data * basicNodes[wi[k]].data;
+        }
+        std::uint32_t fid = (std::uint32_t)fusedNodes.size();
+        fusedNodes.push_back({std::move(xi), std::move(wi)});
+        basicNodes.push_back({s, 0.0, bias_id, 1.0, None, 0.0, NodeType::Fused, fid});
+        return (std::uint32_t)basicNodes.size() - 1;
+    }
     void freeze() {
-        mark = (std::uint32_t)Nodes.size();
+        bmark = (std::uint32_t)basicNodes.size();
+        fmark = (std::uint32_t)fusedNodes.size();
         frozen = true;
     }
     void reset() {
         assert(frozen && "Tape.freeze() after building the model");
-        Nodes.resize(mark);
+        basicNodes.resize(bmark);
+        fusedNodes.resize(fmark);
     }
 };
 inline tape Tape;
@@ -55,31 +84,18 @@ class Value {
     public:
         std::uint32_t id = None;
         double& data() const {
-            return Tape.Nodes[id].data;
+            return Tape.basicNodes[id].data;
         }
         double& grad() const {
-            return Tape.Nodes[id].grad;
+            return Tape.basicNodes[id].grad;
         }
-
-        //future implementation
-        /*enum Op{
-            add,
-            sub,
-            mul,
-            div,
-            pow,
-            exp,
-            sin,
-            cos,
-            tanh
-            };*/
 
     private:
 
     public:
 
         static Value create( double data ) {
-            return Value{Tape.push(data)};
+            return Value{Tape.push_basic(data)};
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Value& v){
@@ -90,14 +106,14 @@ class Value {
             double out_data = a.data() + b.data();
             double da = 1.0;
             double db = 1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da, b.id, db);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da, b.id, db);
             return Value{id};
         }
 
         friend Value operator + (const Value& a, double k) {
             double out_data = a.data() + k;
             double da = 1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
@@ -109,21 +125,21 @@ class Value {
             double out_data = a.data() - b.data();
             double da = 1.0;
             double db = -1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da, b.id, db);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da, b.id, db);
             return Value{id};
         }
 
         friend Value operator - (const Value& a, double k) {
             double out_data = a.data() - k;
             double da = 1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value operator - (double k, const Value& a) {
             double out_data = k - a.data();
             double da = -1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
@@ -131,14 +147,14 @@ class Value {
             double out_data = a.data() * b.data();
             double da = 1.0 * b.data();
             double db = a.data() * 1.0;
-            std::uint32_t id = Tape.push(out_data, a.id, da, b.id, db);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da, b.id, db);
             return Value{id};
         }
 
         friend Value operator * (const Value& a, double k) {
             double out_data = a.data() * k;
             double da = 1.0 * k;
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
@@ -150,66 +166,75 @@ class Value {
             double out_data = a.data() / b.data();
             double da = 1.0 / b.data();
             double db = a.data() * -1.0 / (b.data() * b.data());
-            std::uint32_t id = Tape.push(out_data, a.id, da, b.id, db);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da, b.id, db);
             return Value{id};
         }
 
         friend Value operator / (const Value& a, double k) {
             double out_data = a.data() / k;
             double da = 1.0 / k;
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value operator / (double k, const Value& a) {
             double out_data = k / a.data();
             double da = k * -1.0 / (a.data() * a.data());
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value exp(const Value& a) {
             double out_data = std::exp(a.data());
             double da = 1.0 * std::exp(a.data());
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value tanh(const Value& a) {
             double out_data = std::tanh(a.data());
             double da = 1 - (out_data * out_data);
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value pow(const Value& a, double k) {
             double out_data = std::pow(a.data(), k);
             double da = k * std::pow(a.data(), k-1);
-            std::uint32_t id = Tape.push(out_data, a.id, da);
+            std::uint32_t id = Tape.push_basic(out_data, a.id, da);
             return Value{id};
         }
 
         friend Value sin(const Value& a) {
             double s = std::sin(a.data());
             double c = std::cos(a.data());
-            std::uint32_t id = Tape.push(s, a.id, c);
+            std::uint32_t id = Tape.push_basic(s, a.id, c);
             return Value{id};
         }
 
         friend Value cos(const Value& a) {
             double s = std::sin(a.data());
             double c = std::cos(a.data());
-            std::uint32_t id = Tape.push(c, a.id,-1.0 * s);
+            std::uint32_t id = Tape.push_basic(c, a.id,-1.0 * s);
             return Value{id};
         }
 
         void backward() const {
-            Tape.Nodes[id].grad = 1.0;
-            for (std::uint32_t i = id + 1; i > Tape.mark; i--) {
-                const node n = Tape.Nodes[i-1];
+            Tape.basicNodes[id].grad = 1.0;
+            for (std::uint32_t i = id + 1; i > Tape.bmark; i--) {
+                const basic n = Tape.basicNodes[i-1];
                 if(n.grad == 0) continue;
-                if (n.p0 != None) Tape.Nodes[n.p0].grad += n.d0 * n.grad;
-                if (n.p1 != None) Tape.Nodes[n.p1].grad += n.d1 * n.grad;
+                if (n.p0 != None) Tape.basicNodes[n.p0].grad += n.d0 * n.grad;
+                if (n.p1 != None) Tape.basicNodes[n.p1].grad += n.d1 * n.grad;
+                if (n.type == NodeType::Fused) {                      // new
+                    const fused& f = Tape.fusedNodes[n.fuse_id];
+                    for (size_t k = 0; k < f.xi.size(); ++k) {
+                        basic& x = Tape.basicNodes[f.xi[k]];
+                        basic& w = Tape.basicNodes[f.wi[k]];
+                        x.grad += w.data * n.grad;
+                        w.grad += x.data * n.grad;
+                    }
+                }
             }
         }
 

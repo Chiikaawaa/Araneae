@@ -9,6 +9,7 @@
 #include <random>
 
 inline std::mt19937 g_rng(std::random_device{}());
+inline std::uniform_real_distribution<double> udb(-0.5, 0.5);
 constexpr double pi = 3.141592653589793238462643;
 
 struct Pendulum_params {

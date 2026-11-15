@@ -5,11 +5,7 @@
 #include "Parameter_dial.h"
 
 #include <random>
-#include <vector>
-#include <cassert>
 #include <stdexcept>
-
-inline std::uniform_real_distribution<double> udb(-0.5, 0.5);
 
 enum class Activation { Tanh, linear };
 
@@ -32,12 +28,19 @@ class Neuron {
 
     Trident operator()(const std::vector<Trident>& x) const {
         assert(static_cast<int>(x.size()) == nin && "Neuron input size mismatch");
-        Trident sum = x[0] * weight[0];
-        for (int i = 1; i < nin; ++i) {
-            sum = sum + (x[i] * weight[i]);
+        std::vector<std::uint32_t> wi(nin);
+        for(int i = 0; i< nin; i++) wi[i] = weight[i].id;
+        std::vector<std::uint32_t> xv(nin), x1(nin), x2(nin);
+        for (int i = 0; i < nin; ++i) {
+            xv[i] = x[i].val.id;
+            x1[i] = x[i].de1.id;
+            x2[i] = x[i].de2.id;
         }
-        sum = sum + bias;
-        return nonlin ? sum.Tanh() : sum;
+        Value v  { Tape.push_fused(xv, wi, bias.id) };  // w.x + b
+        Value d1 { Tape.push_fused(x1, wi, None) };     // w.de1
+        Value d2 { Tape.push_fused(x2, wi, None) };     // w.de2
+        Trident out(v, d1, d2);
+        return nonlin ? out.Tanh() : out;
     }
 
     std::vector<Value> parameters() const {
@@ -101,7 +104,7 @@ class MLP {
         for (int n : nouts) {
             if (n <= 0) throw std::invalid_argument("MLP: layer widths must be > 0");
         }
-        first_id = static_cast<std::uint32_t>(Tape.Nodes.size());
+        first_id = static_cast<std::uint32_t>(Tape.basicNodes.size());
         std::vector<int> sizes = {nin};
         sizes.insert(sizes.end(), nouts.begin(), nouts.end());
         layers.reserve(nouts.size());
@@ -109,7 +112,7 @@ class MLP {
             Activation act = (i != nouts.size() - 1) ? Activation::Tanh : Activation::linear;
             layers.emplace_back(sizes[i], sizes[i + 1], act);
         }
-        n_params = static_cast<std::uint32_t>(Tape.Nodes.size()) - first_id;
+        n_params = static_cast<std::uint32_t>(Tape.basicNodes.size()) - first_id;
 
         std::uint32_t expected = 0;
         for(size_t i = 0; i < nouts.size(); i++) {
@@ -145,9 +148,9 @@ class MLP {
     }
 
     void zero_grad() {
-        assert(first_id + n_params <= Tape.mark && "call Tape.freeze() after building the model");
+        assert(first_id + n_params <= Tape.bmark && "call Tape.freeze() after building the model");
         for (std::uint32_t i = first_id; i < first_id + n_params; ++i) {
-            Tape.Nodes[i].grad = 0.0;
+            Tape.basicNodes[i].grad = 0.0;
         }
     }
 };

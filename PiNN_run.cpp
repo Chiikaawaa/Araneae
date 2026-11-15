@@ -21,6 +21,7 @@ int main() {
     else {
         std::cout<<"Load kela model, thamb pudhcha karto"<<"\n";
     }
+    Tape.freeze();
     std::ofstream csv("pendulum_results_NN.csv");
     csv<<"time,theta,omega\n";
     for (int i = 0; i < ns; i++) {
@@ -35,6 +36,7 @@ int main() {
         double omega_val = theta.de1.data() * sqrt(pnd.angfreqsqr);
 
         csv << time << "," << theta_val << "," << omega_val << "\n";
+        Tape.reset();
     }
     csv.close();
     std::cout << "Wrote " << ns << " data rows\n";
