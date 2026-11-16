@@ -63,18 +63,19 @@ double energy(double θ, double ω){
 }
 int main() {
     vector<double> Y = {pnd.theta0, pnd.omega0};
-    double t_end = pnd.time_period * (trn.total_oscillations+1);
+    double t_end = pnd.time_period * (trn.total_oscillations);
     double t = 0.0;
     int n_steps = int(t_end / trn.h);
 
     std::ofstream csv("rk4_results.csv");
-    csv << "time,theta_r,omega_r\n";
+    csv << "time,theta_r,omega_r,energy_r\n";
     csv << t << "," << Y[0] << "," << Y[1] << "\n";
     for(int i = 0; i < n_steps; i++){
         if(i%10 == 0) std::cout<<i<<"\n";
         Y = rk4(Y);
         t += trn.h;
-        csv << t << "," << Y[0] << "," << Y[1] << "\n";
+        double e = energy(Y[0], Y[1]);
+        csv << t << "," << Y[0] << "," << Y[1] << "," << e << "\n";
     }
     csv.close();
 

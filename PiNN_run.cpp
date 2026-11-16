@@ -9,13 +9,10 @@
 #include <cmath>
 
 int main() {
-    Training_params trn;
-    Pendulum_params pnd;
-    DLoptimiser dlo;
-    double total_time = (trn.total_oscillations+1) * pnd.time_period;
+    double total_time = (trn.total_oscillations) * pnd.time_period;
     int ns = total_time / trn.h;
     MLP net(n_inputs, {32, 32, 32, 1});
-    if(!load_model(net, "pendulum")) {
+    if(!load_model(net, "modelmodel")) {
         std::cerr<<"Couldnt load model"<<"\n";
     }
     else {
@@ -23,7 +20,7 @@ int main() {
     }
     Tape.freeze();
     std::ofstream csv("pendulum_results_NN.csv");
-    csv<<"time,theta,omega\n";
+    csv<<"time,theta,omega,energy\n";
     for (int i = 0; i < ns; i++) {
         if(i%10==0) std::cout<<i<<'\n';
         double time = total_time * i / ns;
@@ -35,7 +32,9 @@ int main() {
         double theta_val = theta.val.data();
         double omega_val = theta.de1.data() * sqrt(pnd.angfreqsqr);
 
-        csv << time << "," << theta_val << "," << omega_val << "\n";
+        double energy = 0.5 * pnd.I * omega_val * omega_val + pnd.M * pnd.g * pnd.r * (1 - cos(theta_val));
+
+        csv << time << "," << theta_val << "," << omega_val << "," << energy << "\n";
         Tape.reset();
     }
     csv.close();

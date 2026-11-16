@@ -78,7 +78,7 @@ struct tape {
         fusedNodes.resize(fmark);
     }
 };
-inline tape Tape;
+inline thread_local tape Tape;
 
 class Value {
     public:

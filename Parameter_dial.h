@@ -40,7 +40,7 @@ struct Training_params {
     double h = 0.01;
     double lambda_ic = 1.0;
     double lambda_ph = 1.0;
-    int iterations = 25000;
+    int iterations = 35000;
 };
 
 struct DLoptimiser {

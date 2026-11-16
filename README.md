@@ -1,235 +1,294 @@
-# Araneae
+# Araneae 🕷️⏱️
 
 ## About
 
-Araneae is a physics informed neural network (PiNN) that learns the motion of a damped compound pendulum with zero training data. All it gets is the governing ODE and the initial conditions. No strings attached, though the pendulum has one.
+**Araneae** is a physics-informed neural network (PiNN) that learns the non-linear motion of a damped compound pendulum with **zero training data**. All it gets is the governing ODE and the initial conditions. No strings attached, though the pendulum has one.
 
 Everything is written from scratch in C++:
 
-- a reverse mode autodiff engine (scalar, tape based, micrograd style)
-- a second order truncated Taylor forward mode on top of it, so the network can give you `theta`, `dtheta/dt` and `d2theta/dt2` in one pass
-- a Karpathy style MLP built on those two
-- a training loop with mini batches and Adam
+- A **flat tape-based reverse-mode autodiff engine** with contiguous memory, zero dynamic heap allocations during training, and fused dot-product nodes.
+- A **second-order truncated Taylor forward mode** on top of it (`Trident`), letting the network evaluate $\theta$, $\frac{d\theta}{d\tau}$, and $\frac{d^2\theta}{d\tau^2}$ in a single unified forward pass.
+- A **Karpathy-style micrograd-inspired MLP** built on `Trident` with fused weight-bias linear layers.
+- A **parallel training loop** with OpenMP multi-threading, thread-local tapes, mini-batch collocation, and Adam optimization.
 
-The spider name is because the autodiff graph is basically a web of nodes. That is the whole pun budget for this paragraph. Also because both spider and pendulum swing...
+The spider name? Because the autodiff graph is basically a web of nodes. That is the whole pun budget for this paragraph. Also because both spiders and pendulums swing...
 
-## What's new in v2
+---
 
-v1 built the autodiff graph out of `Value` objects held by shared pointers, one heap allocation per node, each with a backward closure, and a topological sort on every `backward()`. v2 throws all of that out.
+## What's New: The Speed Odyssey
 
-- **The graph is a tape.** Every node lives in one global `std::vector<node>` (`Tape`), reserved up front. A `node` is plain data: the value, the gradient, and up to two parents, each stored as an index plus the local derivative with respect to that parent.
-- **`Value` is just an index.** It is a 4 byte `uint32_t` into the tape. No shared pointers, no refcounting, no closures, no per node `new`.
-- **`backward()` is one reverse sweep.** Nodes are pushed in creation order, so the tape is already topologically sorted. There is nothing to sort: walk from the output index back down to the frozen mark, push `local_derivative * grad` into each parent, and skip nodes whose gradient is zero.
-- **The tape is recycled.** After the model is built, `Tape.freeze()` marks where the parameters end. At the end of each iteration `Tape.reset()` truncates the vector back to that mark, which throws away the whole iteration's graph in one go. Parameters live below the mark and survive.
-- **Parameters are contiguous.** The MLP records `first_id` and `n_params`, so `zero_grad()` is a simple loop over a slice of the tape.
-- Training now defaults to 25000 iterations (was 35000) and takes an optional command line override: `./pendulum_train 5000`.
-- Progress prints every 100 iterations (was 10), and `elapsed` is now in seconds.
-- Training also prints the total time and a "Model saved successfully" message at the end.
+### From v1 to v2: Getting Our Act on Tape
+- **v1 (Shared Pointer Spaghetti):** Built the autodiff graph out of `Value` objects managed by `std::shared_ptr`, one heap allocation per node, each with a backward `std::function` lambda closure, and a recursive topological sort on every `backward()`. It worked, but it spent more time talking to `malloc` than doing math.
+- **v2 (The Tape):** Threw all that out for a flat, pre-reserved `std::vector<basic>` (`tape Tape`). `Value` became a lightweight 4-byte `uint32_t` index. Because operations are pushed in execution order, the tape is **already in topological order**. Backward is just a linear reverse sweep down the array. At the end of each iteration, `Tape.reset()` truncates the vector back to the frozen parameter mark in $O(1)$ time. Graph recycled, zero leaks.
 
-### Speed
+### Beyond v2: Fused Nodes & OpenMP Multi-Threading
+1. **Fused Linear Operations (1.47x speedup):**
+   Why push 30 separate addition and multiplication nodes onto the tape for a single neuron when you can compute $\mathbf{w} \cdot \mathbf{x} + b$ in one shot? We introduced `NodeType::Fused` and `push_fused()`. Backward sweeps through the inputs and weights in a tight, cache-friendly loop (`x.grad += w.data * n.grad`, `w.grad += x.data * n.grad`). Less tape, less overhead, 1.47x pure speedup (see `speedup.png`).
+2. **OpenMP Multi-Threading (`thread_local` Tape):**
+   Remember when earlier versions warned that *"two threads sharing the Tape would be a bad time"*? We took that personally. We made `Tape` **`thread_local`**! Each OpenMP thread now gets its own private tape. Collocation batches are sliced evenly across CPU threads, each thread computes physics residuals and backward passes lock-free, and gradients are accumulated cleanly before the Adam step.
+3. **Modular Architecture:**
+   The training harness is now modular:
+   - `pendulum.h`: Physics ODE residuals and multi-threaded collocation slice evaluation.
+   - `Adam.h`: Dedicated Adam optimizer class encapsulating moment buffers, bias correction, and learning rate scheduling.
+   - `train.cpp`: Unified training driver with CLI arguments for both thread count and iterations.
 
-| Version | Time per iteration |
-|---------|--------------------|
-| v1, first working build | ~5 s |
-| v1, after optimising | ~0.5 s |
-| v2 (tape) | ~0.017 s (1.7 s per 100 iterations) |
+### Benchmarks
 
-That is roughly 30x faster than the best v1, and a full 25000 iteration run lands in the neighbourhood of 7 minutes instead of hours. Your numbers will depend on your machine.
+| Version | Time per 100 iterations | Time per iteration | Total Time (25,000 iters) |
+|---|---|---|---|
+| **v1 (Initial build)** | ~500 s | ~5.0 s | ~35 hours (pack a sleeping bag) |
+| **v1 (Optimized pointers)** | ~50 s | ~0.5 s | ~3.5 hours |
+| **v2 (Flat Tape)** | ~1.7 s | ~0.017 s | ~7 minutes |
+| **Latest (Fused + OpenMP)** | **~0.22 s – 0.35 s** | **~2.5 ms – 3.5 ms** | **~55 – 80 seconds** ⚡ |
+
+*(Measured with 8 OpenMP threads on a modern x86 CPU with `-O3 -march=native -DNDEBUG`)*
+
+---
 
 ## Equation of Pendulum
 
-A uniform rod of length 2r swings about one end, with viscous damping at the pivot:
+A uniform rigid rod of length $2r$ swings about one pivot end, subject to gravity and viscous damping:
 
 ```
 d^2 theta / dt^2 + gamma * d theta / dt + angfreqsqr * sin(theta) = 0
 ```
 
-where
+Where:
 
-- `I = (1/3) * M * (2r)^2` is the moment of inertia of the rod about the pivot
-- `gamma = C / I` is the damping rate
-- `angfreqsqr = M * g * r / I` is the square of the angular frequency (small angle, no damping)
-- `M` is the mass of the rod (kg)
-- `g` is gravity (m/s^2)
-- `r` is the distance from the pivot to the center of mass, so the rod is `2r` long (m)
-- `C` is the damping coefficient, `torque_damping = -C * dtheta/dt`
-- `theta` is the angle from the vertical, `omega = dtheta/dt` is the angular velocity
+- $I = \frac{1}{3} M (2r)^2$ is the moment of inertia of the rod about the pivot.
+- $\gamma = \frac{C}{I}$ is the damping rate.
+- $\text{angfreqsqr} = \frac{M g r}{I}$ is the square of the small-angle undamped angular frequency.
+- $M$ is the mass of the rod (kg).
+- $g$ is gravitational acceleration ($9.81\ \text{m/s}^2$).
+- $r$ is the distance from pivot to center of mass (the rod is $2r$ long).
+- $C$ is the damping coefficient ($\tau_{\text{damping}} = -C \dot{\theta}$).
+- $\theta$ is the angle from vertical; $\omega = \dot{\theta}$ is the angular velocity.
 
-Defaults: `M = 1`, `g = 9.81`, `r = 0.2`, `C = 0.05`, `theta0 = pi/3`, `omega0 = 0`.
+**Defaults:** `M = 1.0`, `g = 9.81`, `r = 0.2`, `C = 0.05`, $\theta_0 = \pi/3$ ($60^\circ$), $\omega_0 = 0.0$.
 
-## Non dimensionalising
+---
 
-Let `w = sqrt(angfreqsqr)` and `tau = time * w`. Then `d/dt = w * d/dtau` and the equation becomes
+## Non-Dimensionalising
 
-```
-angfreqsqr * d2theta/dtau2 + w * gamma * dtheta/dtau + angfreqsqr * sin(theta) = 0
-```
+Why drag physical constants around when you can scale time?
 
-Divide everything by `angfreqsqr` and you get the form the code actually uses:
+Let $\omega_n = \sqrt{\text{angfreqsqr}}$ and dimensionless time $\tau = t \cdot \omega_n$. By the chain rule, $\frac{d}{dt} = \omega_n \frac{d}{d\tau}$, transforming the equation into:
 
 ```
-d2theta/dtau2 + (gamma / w) * dtheta/dtau + sin(theta) = 0
+angfreqsqr * d2theta/dtau2 + omega_n * gamma * dtheta/dtau + angfreqsqr * sin(theta) = 0
 ```
 
-The network takes `tau` as input and outputs `theta`. Derivatives with respect to `tau` come out of the forward mode. To get back to real units, `omega = dtheta/dtau * w`.
-
-## How it learns
-
-The network never sees a solution. It sees the ODE residual:
+Divide through by $\text{angfreqsqr}$ and you get the elegant dimensionless ODE the code actually solves:
 
 ```
-residual = d2theta/dtau2 + (gamma / w) * dtheta/dtau + sin(theta)
+d2theta/dtau2 + (gamma / omega_n) * dtheta/dtau + sin(theta) = 0
 ```
 
-If `theta(tau)` is a true solution, the residual is zero everywhere. So the loss is:
+The neural network takes $\tau$ as input and outputs $\theta(\tau)$. Derivatives with respect to $\tau$ emerge automatically from the forward-mode `Trident`. To retrieve real-world units: $\omega = \frac{d\theta}{d\tau} \cdot \omega_n$.
+
+---
+
+## How It Learns
+
+The network never sees a pre-computed trajectory. It only sees the ODE residual:
 
 ```
-physics_loss = mean over batch of residual^2
-ic_loss      = (theta(0) - theta0)^2 + (dtheta/dtau(0) - omega0 / w)^2
+residual = d2theta/dtau2 + (gamma / omega_n) * dtheta/dtau + sin(theta)
+```
+
+If $\theta(\tau)$ is a true solution, the residual is zero everywhere. Thus, the total loss is:
+
+```
+physics_loss = mean over batch of (residual^2)
+ic_loss      = (theta(0) - theta0)^2 + (dtheta/dtau(0) - omega0 / omega_n)^2
 loss         = lambda_ph * physics_loss + lambda_ic * ic_loss
 ```
 
-The physics loss is evaluated at random time points. The IC loss pins the starting angle and velocity, otherwise "theta = 0 forever" is a perfectly valid answer and the network would happily take it.
+- **Physics loss:** Sampled across uniformly distributed random collocation points in $[0, 4\text{ periods}]$.
+- **Initial condition (IC) loss:** Anchors the starting angle and velocity. Otherwise, $\theta(\tau) = 0$ for all time is a trivial residual-free equilibrium, and the network would happily take it (minimum energy and maximum laziness, much like a Sunday morning).
 
-## The autodiff bit
+---
 
-**`Tape` and `Value`.** A `Value` is an index into the global `Tape`. Each op (`+`, `-`, `*`, `/`, `exp`, `tanh`, `pow`, `sin`, `cos`) pushes one node holding the result, plus its one or two parents and the local derivative for each, computed on the spot. `backward()` seeds the output node's gradient with 1 and sweeps the tape in reverse, accumulating `local_derivative * grad` into the parents.
+## The Autodiff Engine
 
-**`Trident`** holds three `Value`s: the value, the first derivative and the second derivative with respect to the input. Each op (`+`, `-`, `*`, `/`, `Exp`, `Tanh`, `Pow`, `Sin`, `Cos`) propagates all three with the product and chain rules. Because those derivative terms are themselves tape nodes, the loss, which contains `d2theta/dtau2`, can be backpropagated all the way to the weights. Forward mode for the input derivatives, reverse mode for the weight gradients.
+### Tape and Fused Nodes
+- **`Tape` and `Value`:** A `Value` is simply an index into a thread-local `tape`. Standard scalar arithmetic operations push `basic` nodes recording inputs and local derivatives.
+- **Fused Dot-Products:** Fully connected layers call `push_fused(xi, wi, bias_id)`. Instead of blowing up the tape with dozens of intermediate sum and product nodes, it packs the layer computation into a `fused` entry, evaluating both the forward activation and exact analytical backprop gradients in a vectorized loop.
+- **`Trident` (Forward-Mode Taylor Arithmetic):** Holds three `Value` indices: value, 1st derivative, and 2nd derivative with respect to $\tau$. Standard operators (`+`, `-`, `*`, `/`, `Exp`, `Tanh`, `Pow`, `Sin`, `Cos`) propagate all three simultaneously using product and chain rules. Because derivative terms are themselves tape nodes, the physics loss (which includes $\ddot{\theta}$) backpropagates directly into the network weights.
 
-**Lifecycle of the tape in training:**
-
-```
-build MLP          -> parameters are the first n_params nodes on the tape
-Tape.freeze()      -> remember where the parameters end (the "mark")
-each iteration:
-    build graph    -> residuals and loss push nodes above the mark
-    zero_grad()    -> zero the parameter gradients
-    backward()     -> reverse sweep from the loss down to the mark
-    Adam update    -> params[j].data() -= ...
-    Tape.reset()   -> truncate back to the mark, graph gone
-```
-
-## Network
-
-- Input: 9 features (see below)
-- Hidden layers: 32, 32, 32 with `tanh`
-- Output: 1 neuron, linear, this is `theta`
-- 2465 parameters
-- Weights start uniform in `[-0.5, 0.5]`, biases at 0
-- The RNG is seeded from `random_device`, so no two training runs are the same
-
-### Fourier feature encoding
-
-Instead of feeding raw `tau`, the network gets:
+### Tape Lifecycle in Multi-Threaded Training
 
 ```
-[ tau, sin(tau), cos(tau), sin(2 tau), cos(2 tau), ... , sin(4 tau), cos(4 tau) ]
+Build MLP on main thread   -> Parameters are the first n_params nodes on tape
+Tape.freeze()              -> Lock the boundary (bmark)
+Main loop:
+    #pragma omp parallel:
+        Clone frozen parameter prefix to thread_local Tape (if needed)
+        Evaluate chunk of collocation batch via pendulum.h
+        loss.backward()    -> Reverse sweep down thread-local Tape
+        Save thread gradients into gbuf[threadID]
+        Tape.reset()       -> Truncate back to mark; graph gone in O(1)
+    Sum gradients across threads: g = sum(gbuf)
+    adam.step(params, g)   -> Parameter update via Adam.h
 ```
 
-`n_freq = 4`, so `1 + 2*4 = 9` inputs.
+---
 
-Why: plain MLPs with `tanh` are bad at fitting oscillating functions of a raw scalar input. They learn smooth low frequency stuff first and struggle with waves. The pendulum is a wave, so we hand the network sines and cosines up front. Since the input is `tau`, the natural oscillation sits near frequency 1 (damping is light, so the period in `tau` is close to 2 pi), and the higher harmonics cover the distortion from the large swing (60 degrees is not small angle). The raw `tau` stays in the list so the network can still build the decay envelope from damping.
+## Network Architecture
 
-The encoding is itself written with `Trident` ops, so derivatives flow through it for free.
+- **Input:** 9 Fourier features derived from $\tau$.
+- **Hidden Layers:** 3 dense layers of 32 neurons each with `Activation::Tanh`.
+- **Output:** 1 linear neuron (`Activation::linear`) predicting $\theta$.
+- **Parameters:** 2,465 weights and biases.
+- **Initialization:** Weights uniform in $[-0.5, 0.5]$, biases at 0.0.
+- **RNG:** Seeded from `std::random_device`.
 
-## Adam and mini batches
+### Fourier Feature Encoding
 
-**Mini batch.** Every iteration draws `batch_size` (100) fresh random times uniformly from `[0, 4 periods]` and averages the squared residual over them. Fresh points each step means the network cannot memorise a fixed grid, and each step is cheaper than evaluating a dense grid.
+Standard MLPs with `tanh` suffer from spectral bias—they learn low frequencies easily and struggle with waves. But a pendulum is literally a wave. 
 
-**Adam.** Per parameter it keeps a running average of the gradient (`m`, decay `beta1`) and of the squared gradient (`v`, decay `beta2`), corrects both for their startup bias, and steps by `lr * m_hat / (sqrt(v_hat) + epsilon)`. Parameters with noisy or large gradients get smaller steps, quiet ones get bigger steps.
+Instead of feeding raw $\tau$, the network receives:
 
-**Learning rate schedule.** Exponential decay from `lr_start = 1e-2` to `lr_end = 1e-5` over all iterations, so it swings hard early and settles down at the end.
+```
+[ tau, sin(tau), cos(tau), sin(2 tau), cos(2 tau), sin(3 tau), cos(3 tau), sin(4 tau), cos(4 tau) ]
+```
+
+With `n_freq = 4`, we supply 9 features:
+- Low harmonics capture the dominant oscillation (near frequency 1).
+- Higher harmonics capture non-linear distortion caused by large initial swing angles ($60^\circ$ is far beyond small-angle territory).
+- The raw $\tau$ term lets the network capture the exponential decay envelope from damping.
+- The encoding is evaluated with `Trident` operations, so all input derivatives propagate through the harmonics for free.
+
+---
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Autograd.h` | `tape`/`node` storage, `Value` (reverse mode, an index into the tape) and `Trident` (value + 1st + 2nd derivative forward mode) |
-| `MLP.h` | `Neuron`, `Layer`, `MLP` built on `Trident`, plus `zero_grad` |
-| `ModelSL.h` | Save and load the weights as raw binary |
-| `Parameter_dial.h` | All the knobs, the global RNG, and the Fourier `encode` function |
-| `pendulum_train.cpp` | Training: physics + IC loss, mini batches, Adam. Writes `pendulum` and `loss.csv` |
-| `PiNN_run.cpp` | Loads `pendulum` and evaluates the network on a uniform time grid. Writes `pendulum_results_NN.csv` |
-| `RK4solver.cpp` | Classic RK4 solution of the same ODE, used as ground truth. Writes `rk4_results.csv` |
-| `RK4_vs_PiNN.ipynb` | Plots network vs RK4 for `theta` and `omega` |
+| `Autograd.h` | Tape storage (`tape`, `basic`, `fused`), lightweight `Value` indices, and `Trident` forward-mode Taylor arithmetic. |
+| `MLP.h` | `Neuron`, `Layer`, and `MLP` architectures with fused dot products and instant gradient zeroing. |
+| `Adam.h` | Modular Adam optimizer implementation with learning rate schedule and moment tracking. |
+| `pendulum.h` | Physics residual and initial condition loss functions with multi-threaded chunking support. |
+| `ModelSL.h` | Binary serialization (`save_model`, `load_model`) for model weights. |
+| `Parameter_dial.h` | Physical constants (`pnd`), training hyperparams (`trn`), optimizer knobs (`dlo`), and Fourier encoding. |
+| `train.cpp` | Main training program: OpenMP parallel loop, loss logging to `loss.csv`, and model checkpointing to `modelmodel`. |
+| `PiNN_run.cpp` | Inference evaluator: loads `modelmodel`, evaluates over time grid with tape recycling, and exports `pendulum_results_NN.csv`. |
+| `RK4solver.cpp` | Classical 4th-order Runge-Kutta numerical ground-truth solver, exporting `rk4_results.csv`. |
+| `RK4_vs_PiNN_pendulum.ipynb` | Jupyter Notebook comparing PiNN predictions vs RK4 ground truth (angle, angular velocity, phase portrait). |
+| `speedup.png` | Benchmark plot demonstrating the 1.47x speedup from weight/bias fusion. |
+
+---
 
 ## Requirements
 
-- A C++17 compiler (the code relies on `inline` variables). The training source's own build comment uses `-std=c++23`(completely unnecessary, c++17 works), any a recent `g++` works with the commands below as is.
-- `RK4solver.cpp` uses unicode identifiers (`θ`, `ω`). On an older compiler, rename them to plain ASCII.
-- Python for the notebook: `pandas`, `matplotlib`. `scipy` only if you want extra analysis.
+- **C++ Compiler:** Modern C++ (C++20 or C++23 recommended; GCC 12+, Clang 15+, or MSVC 2022) with OpenMP support (`-fopenmp`).
+- **Python (for notebook):** `python >= 3.8` with `pandas`, `numpy`, `matplotlib`, and `seaborn`.
 
-## Build and run
+---
 
-Order matters: `PiNN_run` needs the `pendulum` file that training writes, and it reads it from the current directory.
+## Build and Run
+
+> [!NOTE]
+> Order matters: `PiNN_run` expects the trained binary weights file `modelmodel` written by `train`.
+
+### 1. Compile & Train
+
+Compile with OpenMP and optimization enabled:
 
 ```bash
-g++ -std=c++23 -O3 -march=native -DNDEBUG pendulum_train.cpp -o pendulum_train
-./pendulum_train            # 25000 iterations default, or: ./pendulum_train -mention number of training iterations-
+g++ -std=c++23 -O3 -march=native -fopenmp -DNDEBUG train.cpp -o train
+```
+
+Run training:
+```bash
+./train
+```
+
+*Want custom threads and iteration counts? Pass them directly via CLI:*
+```bash
+./train 8 25000         # ./train [nthreads] [iterations]
+```
+
+*(Keep `-DNDEBUG` enabled for real runs; assertions in `Autograd.h` and `MLP.h` are great for debugging the tape, but they slow down training).*
+
+### 2. Run Inference (Evaluation)
+
+Compile and run the inference executable:
+
+```bash
 g++ -std=c++23 -O3 -march=native -DNDEBUG PiNN_run.cpp -o PiNN_run
 ./PiNN_run
+```
+
+*(If you see `"Load kela model, thamb pudhcha karto"`, don't panic. That's Marathi for "Model loaded, hold your horses while I do the rest!")*
+
+### 3. Generate RK4 Ground Truth
+
+Compile and run the Runge-Kutta integrator:
+
+```bash
 g++ -std=c++23 -O3 -march=native -DNDEBUG RK4solver.cpp -o RK4solver
 ./RK4solver
 ```
 
-Keep `-DNDEBUG` for real runs. Without it the `assert`s in `MLP.h` and `Autograd.h` stay on, which is useful while debugging the tape but not free.
+### 4. Compare & Visualize
 
-`pendulum_train` prints `physics_loss`, `ic_loss` and elapsed seconds every 100 iterations. Delete that print if you want to save a bit of IO.
+Launch Jupyter and open `RK4_vs_PiNN_pendulum.ipynb` to plot the neural network's predictions against the numerical RK4 integration.
 
-Training is still the expensive part: every collocation point builds its own full autodiff graph on the tape, and there are 100 of them per iteration. The difference is that v2 does it in about 17 ms per iteration instead of 500.
+---
 
 ## Outputs
 
 | File | Written by | Contents |
 |------|-----------|----------|
-| `pendulum` | `pendulum_train` | Binary weights: a `uint64` parameter count, then each parameter as a `double`. The architecture in `PiNN_run.cpp` must match, or loading fails with a parameter count mismatch |
-| `loss.csv` | `pendulum_train` | `iteration,physics_loss,ic_loss`, one row per iteration |
-| `pendulum_results_NN.csv` | `PiNN_run` | `time,theta,omega` from the network, `omega` in rad/s |
-| `rk4_results.csv` | `RK4solver` | `time,theta_r,omega_r` from RK4 with step 0.01, including the `t = 0` row |
+| `modelmodel` | `train` | Binary weights: `uint64` parameter count followed by sequential `double` values. |
+| `loss.csv` | `train` | `iteration,physics_loss,ic_loss` across training. |
+| `pendulum_results_NN.csv` | `PiNN_run` | `time,theta,omega` predicted by the network. |
+| `rk4_results.csv` | `RK4solver` | `time,theta_r,omega_r` from RK4 with step `h = 0.01`. |
+
+---
 
 ## Configuration
 
 Everything lives in `Parameter_dial.h`.
 
-**`Pendulum_params`**
+**`Pendulum_params` (`pnd`)**
 
 | Name | Default | Meaning |
 |------|---------|---------|
-| `M` | 1.0 | Mass |
-| `g` | 9.81 | Gravity |
-| `r` | 0.2 | Pivot to center of mass, rod length is twice this |
-| `C` | 0.05 | Damping coefficient |
-| `theta0` | pi/3 | Initial angle |
-| `omega0` | 0.0 | Initial angular velocity |
-| `I`, `angfreqsqr`, `gamma`, `time_period` | derived | Computed from the above. `time_period` is the small angle damped period |
+| `M` | `1.0` | Mass of the rod (kg) |
+| `g` | `9.81` | Acceleration due to gravity ($\text{m/s}^2$) |
+| `r` | `0.2` | Pivot to center of mass (rod length is $2r$) |
+| `C` | `0.05` | Damping coefficient |
+| `theta0` | `pi / 3.0` | Initial displacement ($60^\circ$ in radians) |
+| `omega0` | `0.0` | Initial angular velocity ($\text{rad/s}$) |
+| `I`, `angfreqsqr`, `gamma`, `time_period` | *derived* | Computed automatically from the physical parameters above |
 
-**`Training_params`**
-
-| Name | Default | Meaning |
-|------|---------|---------|
-| `total_oscillations` | 4.0 | Training window in periods |
-| `batch_size` | 100 | Collocation points per iteration |
-| `h` | 0.01 | Time step of the evaluation grid in `PiNN_run`, and the RK4 step |
-| `lambda_ph`, `lambda_ic` | 1.0, 1.0 | Loss weights |
-| `iterations` | 25000 | Adam steps (overridable from the command line) |
-
-**`DLoptimiser`**
+**`Training_params` (`trn`)**
 
 | Name | Default | Meaning |
 |------|---------|---------|
-| `lr_start`, `lr_end` | 1e-2, 1e-5 | Learning rate decay endpoints |
-| `beta1`, `beta2`, `epsilon` | 0.9, 0.999, 1e-8 | Adam constants |
+| `total_oscillations` | `4.0` | Time span in small-angle periods |
+| `batch_size` | `100` | Collocation points per iteration |
+| `h` | `0.01` | Evaluation and integration grid step size |
+| `lambda_ph`, `lambda_ic` | `1.0, 1.0` | Loss term weights |
+| `iterations` | `25000` | Adam optimization steps (overridable via CLI) |
 
-`n_freq` (default 4) sets the number of Fourier frequencies. The network sizes `{32, 32, 32, 1}` are hardcoded in both `pendulum_train.cpp` and `PiNN_run.cpp`. Change one, change both, and retrain.
+**`DLoptimiser` (`dlo`)**
 
-## Things worth knowing
+| Name | Default | Meaning |
+|------|---------|---------|
+| `learning_rate` / `lr_start` | `1e-2` | Initial learning rate |
+| `lr_end` | `1e-5` | Final decayed learning rate |
+| `beta1`, `beta2`, `epsilon` | `0.9, 0.999, 1e-8` | Adam hyperparameters |
 
-- The network trains on 4 periods but `PiNN_run` and `RK4solver` run for 5. That last stretch is extrapolation, so expect the network to take a swing and a miss there.
-- `time_period` is the small angle formula. At 60 degrees the real period is longer, so "4 periods" is a rough window size and not an exact count of oscillations.
-- The grid in `PiNN_run` is `total_time * i / ns` with an integer `ns`, so its spacing is only close to `h`. The two CSVs have slightly different row counts and times, so compare them by plotting, not by row index.
-- **A `Value` is only valid until the next `Tape.reset()`.** It is an index, so after a reset it points at whatever gets pushed next. Do not hold on to per iteration `Value`s across iterations. Parameters are safe because they sit below the mark.
-- **Order matters on the tape.** Build the `MLP` first, then call `Tape.freeze()`, then train. `Tape.reset()` and `MLP::zero_grad()` assert that the tape was frozen (asserts are off under `-DNDEBUG`, so getting this wrong will not warn you).
-- The tape is global and the code is single threaded. Two threads sharing the `Tape` would be a bad time.
-- The tape is `reserve`d at `2 << 20` nodes, which is on the order of 100 MB at 48 bytes per node. A batch of 100 collocation points fills a good chunk of that. If you raise `batch_size` or widen the network the vector will simply grow, but you pay for the reallocation and the memory.
-- `PiNN_run` never calls `Tape.freeze()` or `Tape.reset()`, so its tape keeps growing over the evaluation grid. That is fine for a few hundred points, and it is an easy fix if you ever evaluate many more.
+---
+
+## Things Worth Knowing
+
+- **Threads and Tapes:** The tape is `thread_local`. Every OpenMP thread gets its own contiguous memory vector. Threads never lock, never share tape nodes, and never wait on each other during the forward or backward sweeps.
+- **Tape Recycling:** `Value` is an index into the tape. Calling `Tape.reset()` rewinds the vector to the mark, making any temporary intermediate `Value` invalid. Network parameters are safe because they live permanently below the frozen mark.
+- **Inference Tape Hygiene:** `PiNN_run` calls `Tape.freeze()` before the evaluation loop and `Tape.reset()` inside the loop, preventing the tape from growing uncontrollably over large grids.
+- **Period Nuance:** `time_period` uses the small-angle linear formula. At $60^\circ$, non-linear effects lengthen the true physical period, so "4 periods" is an approximate window rather than an exact integer count of swings.
+- **Model Name:** The checkpoint is named `modelmodel`. Why? Because it's so good we named it twice.
+- **Zero Training Data:** The network has never seen a labeled dataset, sensor measurement, or simulation log. It learns to swing purely by listening to the laws of physics and minimizing the ODE residual—proof that with enough C++, autograd tape, and coffee, a neural net can figure out gravity all by itself.
