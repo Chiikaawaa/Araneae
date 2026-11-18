@@ -127,11 +127,12 @@ Each iteration:
 
 ```bash
 # Compile
-g++ -std=c++23 -O2 -march=native -fopenmp -DNDEBUG train.cpp -o train
+g++ -std=c++23 -O3 -march=native -fopenmp -DNDEBUG train.cpp -o train
 
-# Run with 8 threads, 50 000 iterations
-./train 8 50000
+# Run with ./train {number of threads you want to assign, default is omp_get_max_threads()} {number of training iterations, default is 30k which was enough for pendulum}
+./train
 ```
+(C++17 should work, idk)
 
 ### `RK4solver.cpp` — Numerical Reference
 
@@ -142,7 +143,7 @@ $$Y_{n+1} = Y_n + \frac{h}{6}(k_1 + 2k_2 + 2k_3 + k_4)$$
 Outputs `rk4_results.csv` for direct comparison against `pendulum_results_NN.csv`.
 
 ```bash
-g++ -std=c++23 -O2 -march=native -DNDEBUG RK4solver.cpp -o RK4solver
+g++ RK4solver.cpp -o RK4solver
 ./RK4solver
 ```
 
@@ -167,17 +168,17 @@ git clone <repo-url>
 cd Araneae
 
 # 2. Train the PiNN
-g++ -std=c++23 -O2 -march=native -fopenmp -DNDEBUG train.cpp -o train
+g++ -std=c++23 -O3 -march=native -fopenmp -DNDEBUG train.cpp -o train
 ./train            # uses all CPU threads, 35 000 iterations by default
 # → writes: modelmodel, loss.csv
 
 # 3. Run the PiNN for inference
-g++ -std=c++23 -O2 -march=native -DNDEBUG PiNN_run.cpp -o PiNN_run
+g++ PiNN_run.cpp -o PiNN_run
 ./PiNN_run
 # → writes: pendulum_results_NN.csv
 
 # 4. Run the RK4 reference
-g++ -std=c++23 -O2 -march=native -DNDEBUG RK4solver.cpp -o RK4solver
+g++ RK4solver.cpp -o RK4solver
 ./RK4solver
 # → writes: rk4_results.csv
 
